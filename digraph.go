@@ -7,6 +7,7 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
+// validRunes runes represents a probably incomplete maping of runes to be ommited inside formulas.
 var validRunes = [...]bool{
 	'+': true,
 	'-': true,
@@ -16,18 +17,26 @@ var validRunes = [...]bool{
 	')': true,
 }
 
+// cell represents a formula excel cell.
 type cell struct {
-	id       uint
-	y        uint
+	// id is formed by cocatonating the x and y of the cell.
+	// used to calculate lowlink value.
+	id uint
+	// y is used to obtain the x from the id.
+	y uint
+	// isCyclic indicates if the formula cell ultimately leads in a
+	// recursive function.
 	isCyclic bool
 }
 
+// digraph represents a directed graph of formula cells inside an excel file.
 type digraph struct {
 	f         *excelize.File
 	formulas  map[uint]*cell
 	relations map[*cell][]*cell
 }
 
+// newGraph forms a graph relationship for each of the formula cells in the reader.
 func newGraph(from io.Reader) (*digraph, error) {
 	f, err := excelize.OpenReader(from)
 	if err != nil {
@@ -80,12 +89,16 @@ func newGraph(from io.Reader) (*digraph, error) {
 	return graph, nil
 }
 
+// addCell adds a formula cell to the graph whilst keeping pointers consistent throughout the
+// graph realations.
+// addCell will also add the referenced cells of the provided cell which are formula cells.
 func (d *digraph) addCell(c *cell, formula string) error {
 	if ptr, ok := d.formulas[c.id]; !ok {
 		d.formulas[c.id] = c
 	} else {
 		c = ptr
 	}
+
 	references := digestFormula(formula)
 
 	for _, refAxis := range references {
@@ -119,7 +132,9 @@ func (d *digraph) addCell(c *cell, formula string) error {
 	return nil
 }
 
+// digestFormula digests the formula: formula to get the referenced cells in the formula.
 func digestFormula(formula string) []string {
+	// filter out opperations.
 	s := strings.FieldsFunc(formula, func(r rune) bool {
 		i := int(r)
 		if i < len(validRunes) {
@@ -138,6 +153,8 @@ func digestFormula(formula string) []string {
 	return s
 }
 
+// concat takes x, y uint s and produces an uint of the form xy.
+// ex: x = 123 , y = 456 -> xy = 123456
 func concat(x, y uint) uint {
 	var mul uint = 10
 	for y >= mul {
@@ -146,6 +163,9 @@ func concat(x, y uint) uint {
 	return x*mul + y
 }
 
+// unConcat takes xy, y uint s and undo s the concatonation process.
+// given the concatonated xy we can take away y to remain with x and y.
+// ex: xy = 123456 , y = 456 -> x = 123
 func unConcat(xy, y uint) uint {
 	var mul uint = 10
 	for y >= mul {
