@@ -17,16 +17,15 @@ var validRunes = [...]bool{
 }
 
 type cell struct {
-	id      uint
-	y       uint
-	lowLink int
-	val     string
+	id       uint
+	y        uint
+	isCyclic bool
 }
 
 type digraph struct {
-	formulas map[uint]*cell
-	cells    map[uint]*cell
-	edges    map[cell][]*cell
+	f         *excelize.File
+	formulas  map[uint]*cell
+	relations map[*cell][]*cell
 }
 
 func newGraph(from io.Reader) (*digraph, error) {
@@ -41,9 +40,9 @@ func newGraph(from io.Reader) (*digraph, error) {
 	}
 
 	graph := &digraph{
-		formulas: make(map[uint]*cell),
-		cells:    make(map[uint]*cell),
-		edges:    make(map[cell][]*cell),
+		f:         f,
+		formulas:  make(map[uint]*cell),
+		relations: make(map[*cell][]*cell),
 	}
 	var colx, rowx int
 	for _, row := range rows {
@@ -64,15 +63,13 @@ func newGraph(from io.Reader) (*digraph, error) {
 				return nil, err
 			}
 
-			val, err := f.GetCellValue("Sheet1", axis)
-			if err != nil {
-				return nil, err
+			if formula == "" {
+				continue
 			}
 
 			c := &cell{
-				id:  concat(uint(colx), uint(rowx)),
-				y:   uint(rowx),
-				val: val,
+				id: concat(uint(colx), uint(rowx)),
+				y:  uint(rowx),
 			}
 
 			graph.addCell(c, formula)
@@ -80,25 +77,46 @@ func newGraph(from io.Reader) (*digraph, error) {
 		colx = 0
 	}
 
-	return nil, nil
+	return graph, nil
 }
 
 func (d *digraph) addCell(c *cell, formula string) error {
-	if formula != "" {
-		// add cell.
+	if ptr, ok := d.formulas[c.id]; !ok {
 		d.formulas[c.id] = c
-
-		axis := digestFormula(formula)
-
-		// TODO: attaching algorithm
-		for _, pos := range axis {
-			x, y, err := excelize.CellNameToCoordinates(pos)
-			if err != nil {
-				return err
-			}
-
-		}
+	} else {
+		c = ptr
 	}
+	references := digestFormula(formula)
+
+	for _, refAxis := range references {
+		formula, err := d.f.GetCellFormula("Sheet1", refAxis)
+		if err != nil {
+			return err
+		}
+
+		if formula == "" { // non-formula cells point to nothing so they cant cause a cycle.
+			continue
+		}
+
+		x, y, err := excelize.CellNameToCoordinates(refAxis)
+		if err != nil {
+			return err
+		}
+
+		refID := concat(uint(x), uint(y))
+		refCell, ok := d.formulas[refID]
+		if !ok {
+			refCell = &cell{
+				id: refID,
+				y:  uint(y),
+			}
+			d.formulas[refID] = refCell
+		}
+
+		d.relations[c] = append(d.relations[c], refCell)
+	}
+
+	return nil
 }
 
 func digestFormula(formula string) []string {
