@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"log"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
@@ -27,6 +28,7 @@ type cell struct {
 	// isCyclic indicates if the formula cell ultimately leads in a
 	// recursive function.
 	isCyclic bool
+	lowlink  int
 }
 
 // digraph represents a directed graph of formula cells inside an excel file.
@@ -34,6 +36,7 @@ type digraph struct {
 	f         *excelize.File
 	formulas  map[uint]*cell
 	relations map[*cell][]*cell
+	circular  []*cell
 }
 
 // newGraph forms a graph relationship for each of the formula cells in the reader.
@@ -130,6 +133,48 @@ func (d *digraph) addCell(c *cell, formula string) error {
 	}
 
 	return nil
+}
+
+func (d *digraph) scc() {
+	stack := make([]*cell, 0)
+	visited := make(map[uint]bool)
+
+	for v := range d.relations {
+		if _, ok := visited[v.id]; ok || v.isCyclic {
+			continue
+		}
+
+		axis, err := excelize.CoordinatesToCellName(int(unConcat(v.id, v.y)), int(v.y))
+		if err != nil {
+			return
+		}
+
+		log.Printf("Stepping in node %v", axis)
+		d.dfs(v, stack, visited)
+		log.Println()
+	}
+}
+
+func (d *digraph) dfs(node *cell, stack []*cell, visited map[uint]bool) {
+	adj, ok := d.relations[node]
+	if !ok {
+		return
+	}
+
+	if visited[node.id] {
+		return
+	}
+	visited[node.id] = true
+
+	axis, err := excelize.CoordinatesToCellName(int(unConcat(node.id, node.y)), int(node.y))
+	if err != nil {
+		return
+	}
+	log.Printf("Visiting %v", axis)
+
+	for _, v := range adj {
+		d.dfs(v, stack, visited)
+	}
 }
 
 // digestFormula digests the formula: formula to get the referenced cells in the formula.
