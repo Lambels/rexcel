@@ -2,7 +2,7 @@ package main
 
 import (
 	"io"
-	"log"
+	"math"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
@@ -28,7 +28,9 @@ type cell struct {
 	// isCyclic indicates if the formula cell ultimately leads in a
 	// recursive function.
 	isCyclic bool
-	lowlink  int
+
+	lowlink uint
+	onStack bool
 }
 
 // digraph represents a directed graph of formula cells inside an excel file.
@@ -79,9 +81,11 @@ func newGraph(from io.Reader) (*digraph, error) {
 				continue
 			}
 
+			id := concat(uint(colx), uint(rowx))
 			c := &cell{
-				id: concat(uint(colx), uint(rowx)),
-				y:  uint(rowx),
+				id:      id,
+				y:       uint(rowx),
+				lowlink: id,
 			}
 
 			graph.addCell(c, formula)
@@ -140,41 +144,47 @@ func (d *digraph) scc() {
 	visited := make(map[uint]bool)
 
 	for v := range d.relations {
-		if _, ok := visited[v.id]; ok || v.isCyclic {
+		if _, ok := visited[v.id]; ok {
 			continue
 		}
 
-		axis, err := excelize.CoordinatesToCellName(int(unConcat(v.id, v.y)), int(v.y))
-		if err != nil {
-			return
+		if d.dfs(v, stack, visited) {
+			v.isCyclic = true
+			d.circular = append(d.circular, v)
 		}
-
-		log.Printf("Stepping in node %v", axis)
-		d.dfs(v, stack, visited)
-		log.Println()
 	}
 }
 
-func (d *digraph) dfs(node *cell, stack []*cell, visited map[uint]bool) {
-	adj, ok := d.relations[node]
-	if !ok {
-		return
-	}
-
-	if visited[node.id] {
-		return
-	}
+func (d *digraph) dfs(node *cell, stack []*cell, visited map[uint]bool) bool {
 	visited[node.id] = true
+	stack = append(stack, node)
+	node.onStack = true
 
-	axis, err := excelize.CoordinatesToCellName(int(unConcat(node.id, node.y)), int(node.y))
-	if err != nil {
-		return
-	}
-	log.Printf("Visiting %v", axis)
+	for _, neighbour := range d.relations[node] {
+		if neighbour.isCyclic { // if one of neighbours is cyclic so will the referencing parent.
+			return true
+		}
 
-	for _, v := range adj {
-		d.dfs(v, stack, visited)
+		if !visited[neighbour.id] { // not visited, visit
+			d.dfs(neighbour, stack, visited)
+		} else if neighbour.onStack {
+			node.lowlink = uint(math.Min(float64(node.lowlink), float64(neighbour.lowlink)))
+		}
 	}
+
+	if node.lowlink == node.id {
+		for len(stack) > 0 {
+			i := len(stack) - 1
+			n := stack[i]
+			n.onStack = false
+			n.lowlink = n.id
+			stack = stack[:i]
+		}
+
+		return true
+	}
+
+	return false
 }
 
 // digestFormula digests the formula: formula to get the referenced cells in the formula.
