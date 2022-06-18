@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"math"
 	"strings"
@@ -31,6 +32,19 @@ type cell struct {
 
 	lowlink uint
 	onStack bool
+}
+
+// String representation for cell.
+func (c *cell) String() string {
+	axis, _ := excelize.CoordinatesToCellName(int(unConcat(c.id, c.y)), int(c.y))
+	return fmt.Sprintf(
+		"%s cyclic: %t onStack: %t lowLink %d id %d",
+		axis,
+		c.isCyclic,
+		c.onStack,
+		c.lowlink,
+		c.id,
+	)
 }
 
 // digraph represents a directed graph of formula cells inside an excel file.
