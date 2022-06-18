@@ -141,8 +141,9 @@ func (d *digraph) addCell(c *cell, formula string) error {
 		refCell, ok := d.formulas[refID]
 		if !ok {
 			refCell = &cell{
-				id: refID,
-				y:  uint(y),
+				id:      refID,
+				y:       uint(y),
+				lowlink: refID,
 			}
 			d.formulas[refID] = refCell
 		}
