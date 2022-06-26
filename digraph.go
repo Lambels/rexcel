@@ -73,6 +73,7 @@ func newGraph(from io.Reader) (*digraph, error) {
 		formulas:  make(map[uint]*cell),
 		relations: make(map[*cell][]*cell),
 		stack:     make([]*cell, 0),
+		circular:  make(map[*cell]struct{}),
 	}
 	var colx, rowx int
 	for _, row := range rows {
@@ -156,6 +157,7 @@ func (d *digraph) addCell(c *cell, formula string) error {
 	return nil
 }
 
+// scc populates the (*digraph).circular field with circular formulas.
 func (d *digraph) scc() {
 	for v := range d.relations {
 		visited := make(map[uint]bool)
@@ -203,14 +205,20 @@ func (d *digraph) sccUtil(n *cell, visited map[uint]bool, results *[][]*cell) {
 			i--
 		}
 
-		// if scc made up of only one component check if the component has a path to itself,
+		// if scc made up of only one component check if the component has a edge to itself,
 		// if it does we take it into consideration since it indicates a cyclic path.
 		if len(comps) > 1 {
+			for _, comp := range comps {
+				comp.isCyclic = true
+				d.circular[comp] = struct{}{}
+			}
 			*results = append(*results, comps)
 		} else {
 			neighbours := d.relations[n]
 			for _, v := range neighbours {
 				if v == n {
+					v.isCyclic = true
+					d.circular[v] = struct{}{}
 					*results = append(*results, comps)
 					break
 				}
