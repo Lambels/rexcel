@@ -53,6 +53,7 @@ type digraph struct {
 	formulas  map[uint]*cell
 	relations map[*cell][]*cell
 	circular  []*cell
+	stack     []*cell
 }
 
 // newGraph forms a graph relationship for each of the formula cells in the reader.
@@ -71,6 +72,7 @@ func newGraph(from io.Reader) (*digraph, error) {
 		f:         f,
 		formulas:  make(map[uint]*cell),
 		relations: make(map[*cell][]*cell),
+		stack:     make([]*cell, 0),
 	}
 	var colx, rowx int
 	for _, row := range rows {
@@ -155,51 +157,49 @@ func (d *digraph) addCell(c *cell, formula string) error {
 }
 
 func (d *digraph) scc() {
-	stack := make([]*cell, 0)
-	visited := make(map[uint]bool)
+	for c := range d.relations {
+		visited := make(map[uint]bool)
+		results := make([][]*cell, 0)
+		d.dfs(c, visited, &results)
 
-	for v := range d.relations {
-		if _, ok := visited[v.id]; ok {
-			continue
+		for _, c := range d.stack {
+			c.onStack = false
+			c.lowlink = c.id
 		}
-
-		if d.dfs(v, stack, visited) {
-			v.isCyclic = true
-			d.circular = append(d.circular, v)
-		}
+		d.stack = d.stack[:0]
 	}
 }
 
-func (d *digraph) dfs(node *cell, stack []*cell, visited map[uint]bool) bool {
+func (d *digraph) dfs(node *cell, visited map[uint]bool, results *[][]*cell) {
 	visited[node.id] = true
-	stack = append(stack, node)
+	d.stack = append(d.stack, node)
 	node.onStack = true
 
-	for _, neighbour := range d.relations[node] {
-		if neighbour.isCyclic { // if one of neighbours is cyclic so will the referencing parent.
-			return true
-		}
-
-		if !visited[neighbour.id] { // not visited, visit
-			d.dfs(neighbour, stack, visited)
-		} else if neighbour.onStack {
-			node.lowlink = uint(math.Min(float64(node.lowlink), float64(neighbour.lowlink)))
+	for _, c := range d.relations[node] {
+		if !visited[c.id] {
+			d.dfs(c, visited, results)
+		} else if c.onStack {
+			node.lowlink = uint(math.Min(float64(c.lowlink), float64(node.lowlink)))
 		}
 	}
 
 	if node.lowlink == node.id {
-		for len(stack) > 0 {
-			i := len(stack) - 1
-			n := stack[i]
+		i := len(d.stack) - 1
+		var vertices []*cell
+		for {
+			n := d.stack[i]
 			n.onStack = false
 			n.lowlink = n.id
-			stack = stack[:i]
+			d.stack = d.stack[:i]
+			vertices = append(vertices, n)
+			if node.id == n.id {
+				break
+			}
+			i--
 		}
 
-		return true
+		*results = append(*results, vertices)
 	}
-
-	return false
 }
 
 // digestFormula digests the formula: formula to get the referenced cells in the formula.
