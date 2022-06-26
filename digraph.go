@@ -52,7 +52,7 @@ type digraph struct {
 	f         *excelize.File
 	formulas  map[uint]*cell
 	relations map[*cell][]*cell
-	circular  []*cell
+	circular  map[*cell]struct{}
 	stack     []*cell
 }
 
@@ -157,48 +157,65 @@ func (d *digraph) addCell(c *cell, formula string) error {
 }
 
 func (d *digraph) scc() {
-	for c := range d.relations {
+	for v := range d.relations {
 		visited := make(map[uint]bool)
 		results := make([][]*cell, 0)
-		d.dfs(c, visited, &results)
+		d.sccUtil(v, visited, &results)
+		if len(results) > 0 {
+			v.isCyclic = true
+			d.circular[v] = struct{}{}
+		}
 
-		for _, c := range d.stack {
-			c.onStack = false
-			c.lowlink = c.id
+		for _, v := range d.stack {
+			v.onStack = false
+			v.lowlink = v.id
 		}
 		d.stack = d.stack[:0]
 	}
 }
 
-func (d *digraph) dfs(node *cell, visited map[uint]bool, results *[][]*cell) {
-	visited[node.id] = true
-	d.stack = append(d.stack, node)
-	node.onStack = true
+func (d *digraph) sccUtil(n *cell, visited map[uint]bool, results *[][]*cell) {
+	visited[n.id] = true
+	d.stack = append(d.stack, n)
+	n.onStack = true
 
-	for _, c := range d.relations[node] {
-		if !visited[c.id] {
-			d.dfs(c, visited, results)
-		} else if c.onStack {
-			node.lowlink = uint(math.Min(float64(c.lowlink), float64(node.lowlink)))
+	for _, v := range d.relations[n] {
+		if !visited[v.id] {
+			d.sccUtil(v, visited, results)
+		}
+		if v.onStack {
+			n.lowlink = uint(math.Min(float64(n.lowlink), float64(v.lowlink)))
 		}
 	}
 
-	if node.lowlink == node.id {
+	if n.lowlink == n.id {
 		i := len(d.stack) - 1
-		var vertices []*cell
+		var comps []*cell
 		for {
-			n := d.stack[i]
-			n.onStack = false
-			n.lowlink = n.id
+			v := d.stack[i]
+			v.onStack = false
+			v.lowlink = v.id
 			d.stack = d.stack[:i]
-			vertices = append(vertices, n)
-			if node.id == n.id {
+			comps = append(comps, v)
+			if v == n {
 				break
 			}
 			i--
 		}
 
-		*results = append(*results, vertices)
+		// if scc made up of only one component check if the component has a path to itself,
+		// if it does we take it into consideration since it indicates a cyclic path.
+		if len(comps) > 1 {
+			*results = append(*results, comps)
+		} else {
+			neighbours := d.relations[n]
+			for _, v := range neighbours {
+				if v == n {
+					*results = append(*results, comps)
+					break
+				}
+			}
+		}
 	}
 }
 
