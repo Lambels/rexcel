@@ -11,7 +11,7 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-func TestLoadRelations(t *testing.T) {
+func TestScc(t *testing.T) {
 	if err := filepath.Walk("./testdata", func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
