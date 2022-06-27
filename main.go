@@ -9,8 +9,7 @@ import (
 )
 
 const usageMessage string = `USAGE:
-rexcel <fileName ...> an arbitrary amound of valid .xlsx file names can be provided.
-`
+rexcel <fileName ...> an arbitrary amound of valid .xlsx file names can be provided.`
 
 func main() {
 	args := os.Args[1:]
