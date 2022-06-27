@@ -1,4 +1,4 @@
-module github.com/Lambels/xlsx-recursion-detector
+module github.com/Lambels/rexcel
 
 go 1.18
 
